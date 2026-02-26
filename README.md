@@ -11,47 +11,49 @@ Local Markdown files can be published to Confluence Cloud pages.
 bash scripts/setup_atlassian_wsl.sh
 ```
 
-## Agent layout
+## Codex standard skill format
 
-- Shared publish runner:
-  - `scripts/publish.sh`
-- Codex skill assets:
-  - `skills/confluence-publisher/SKILL.md`
-- Claude project instructions:
-  - `CLAUDE.md`
-  - `agents/claude/confluence_publisher.md`
+This repository follows Codex skills format (see official docs):
+- https://developers.openai.com/codex/skills/
 
-## Repository structure (what each file does)
+Skill package:
+- `skills/confluence-publisher/SKILL.md` (required)
+- `skills/confluence-publisher/scripts/confluence_publish.py` (self-contained engine)
+- `skills/confluence-publisher/scripts/run_publish.sh` (skill runner)
+- `skills/confluence-publisher/scripts/setup_env.sh` (skill-local `.env` setup)
+- `skills/confluence-publisher/agents/openai.yaml` (optional UI metadata)
 
-- `scripts/confluence_publish.py`
-  - Core engine. Calls Confluence REST API to create/update pages and upload Mermaid images.
-- `scripts/publish.sh`
-  - Shared entrypoint for both Codex and Claude. Executes `confluence_publish.py`.
-- `scripts/setup_atlassian_wsl.sh`
-  - Interactive first-time setup (`.env`, API validation, MCP login).
-- `scripts/setup_atlassian_wsl.ps1`, `scripts/setup_atlassian_wsl.cmd`
-  - Windows wrappers that call the WSL setup script.
+## Install skill (recommended: skill-installer)
 
-- `skills/confluence-publisher/SKILL.md`
-  - Codex skill definition (when/how Codex should run publish workflow).
-- `skills/confluence-publisher/scripts/run_publish.sh`
-  - Codex skill runtime helper. Delegates to `scripts/publish.sh`.
-- `scripts/codex/install_skill.sh`
-  - Installs the Codex skill into `~/.codex/skills/confluence-publisher`.
-- `scripts/codex/install_skill.ps1`, `scripts/codex/install_skill.cmd`
-  - Windows wrappers for Codex skill installation.
+Install directly from GitHub:
 
-- `CLAUDE.md`
-  - Claude entry instruction file for this repository.
-- `agents/claude/confluence_publisher.md`
-  - Detailed Claude workflow instructions for Confluence publishing.
+```bash
+python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+  --repo jidon333-k/codex_mcp_atlassian \
+  --path skills/confluence-publisher
+```
 
-- `docs/*.md`
-  - Source markdown documents to publish.
+Then configure skill-local environment:
 
-## Codex skill install (optional)
+```bash
+bash ~/.codex/skills/confluence-publisher/scripts/setup_env.sh
+# or (if your Codex uses ~/.agents):
+# bash ~/.agents/skills/confluence-publisher/scripts/setup_env.sh
+```
 
-Install this repo as a reusable Codex skill:
+After installation, restart Codex once so the new skill is loaded.
+
+Run:
+
+```bash
+bash ~/.codex/skills/confluence-publisher/scripts/run_publish.sh --dry-run --glob "/path/to/file.md"
+bash ~/.codex/skills/confluence-publisher/scripts/run_publish.sh --glob "/path/to/file.md"
+# or:
+# bash ~/.agents/skills/confluence-publisher/scripts/run_publish.sh --dry-run --glob "/path/to/file.md"
+# bash ~/.agents/skills/confluence-publisher/scripts/run_publish.sh --glob "/path/to/file.md"
+```
+
+## Install skill (from local clone)
 
 ```bash
 bash scripts/codex/install_skill.sh
@@ -69,19 +71,20 @@ scripts\codex\install_skill.cmd
 
 Installed path:
 - `~/.codex/skills/confluence-publisher`
+- or `~/.agents/skills/confluence-publisher` (environment-dependent)
 
-## Claude support (optional)
+## Repository structure (what each file does)
 
-This repo also includes Claude-oriented instructions:
-- [CLAUDE.md](CLAUDE.md)
-- [agents/claude/confluence_publisher.md](agents/claude/confluence_publisher.md)
-
-Claude/Codex shared helper command:
-
-```bash
-bash scripts/publish.sh --dry-run --glob "docs/**/*.md"
-bash scripts/publish.sh --glob "docs/**/*.md"
-```
+- `scripts/confluence_publish.py`
+  - Project-local engine (same logic as skill engine).
+- `scripts/setup_atlassian_wsl.sh`
+  - Project-local interactive setup (`.env`, API validation, MCP login).
+- `skills/confluence-publisher/*`
+  - Self-contained Codex skill package.
+- `CLAUDE.md`, `agents/claude/confluence_publisher.md`
+  - Claude-oriented project instructions.
+- `docs/*.md`
+  - Example/source markdown files.
 
 ## 1) Required setup
 

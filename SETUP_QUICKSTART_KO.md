@@ -63,6 +63,36 @@ scripts\setup_atlassian_wsl.cmd
 
 이 저장소를 다른 Codex 세션에서도 재사용하려면 스킬로 설치하세요.
 
+### A. 표준 방식 (skill-installer, 권장)
+
+```bash
+python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+  --repo jidon333-k/codex_mcp_atlassian \
+  --path skills/confluence-publisher
+```
+
+설치 후 Codex를 한 번 재시작하면 스킬이 안정적으로 인식됩니다.
+
+설치 후 스킬 전용 `.env` 생성:
+
+```bash
+bash ~/.codex/skills/confluence-publisher/scripts/setup_env.sh
+# 또는 (환경에 따라):
+# bash ~/.agents/skills/confluence-publisher/scripts/setup_env.sh
+```
+
+사용:
+
+```bash
+bash ~/.codex/skills/confluence-publisher/scripts/run_publish.sh --dry-run --glob "/path/to/file.md"
+bash ~/.codex/skills/confluence-publisher/scripts/run_publish.sh --glob "/path/to/file.md"
+# 또는:
+# bash ~/.agents/skills/confluence-publisher/scripts/run_publish.sh --dry-run --glob "/path/to/file.md"
+# bash ~/.agents/skills/confluence-publisher/scripts/run_publish.sh --glob "/path/to/file.md"
+```
+
+### B. 로컬 클론에서 설치
+
 WSL:
 
 ```bash
@@ -83,6 +113,7 @@ scripts\codex\install_skill.cmd
 
 설치 위치:
 - `~/.codex/skills/confluence-publisher`
+- 또는 `~/.agents/skills/confluence-publisher` (환경에 따라 다름)
 - Claude 지침 위치: `CLAUDE.md`, `agents/claude/confluence_publisher.md`
 
 ---

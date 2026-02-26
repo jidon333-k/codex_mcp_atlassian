@@ -1,0 +1,7 @@
+version: 1
+interface:
+  display_name: Confluence Publisher
+  short_description: Publish Markdown files to Confluence via REST API.
+  default_prompt: Publish local Markdown files to Confluence with dry-run, then actual publish and verification.
+policy:
+  allow_implicit_invocation: true

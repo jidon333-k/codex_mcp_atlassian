@@ -3,83 +3,63 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-read_config_project_root() {
-  local cfg="$SKILL_ROOT/.project_root"
-  if [[ ! -f "$cfg" ]]; then
-    return 1
-  fi
-  local root
-  root="$(head -n 1 "$cfg" | tr -d '\r\n')"
-  if [[ -z "$root" ]]; then
-    return 1
-  fi
-  if [[ -f "$root/scripts/confluence_publish.py" ]]; then
-    printf '%s\n' "$root"
-    return 0
-  fi
-  return 1
-}
-
-find_project_root() {
-  local config_root
-  config_root="$(read_config_project_root || true)"
-  if [[ -n "$config_root" ]]; then
-    printf '%s\n' "$config_root"
-    return 0
-  fi
-
-  if [[ -n "${CONFLUENCE_PUBLISHER_PROJECT_ROOT:-}" ]]; then
-    if [[ -f "${CONFLUENCE_PUBLISHER_PROJECT_ROOT}/scripts/confluence_publish.py" ]]; then
-      printf '%s\n' "$CONFLUENCE_PUBLISHER_PROJECT_ROOT"
-      return 0
-    fi
-  fi
-
-  local dir="$PWD"
-  while [[ "$dir" != "/" ]]; do
-    if [[ -f "$dir/scripts/confluence_publish.py" ]]; then
-      printf '%s\n' "$dir"
-      return 0
-    fi
-    dir="$(dirname "$dir")"
-  done
-
-  local sibling_root
-  sibling_root="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-  if [[ -f "$sibling_root/scripts/confluence_publish.py" ]]; then
-    printf '%s\n' "$sibling_root"
-    return 0
-  fi
-
-  return 1
-}
+ENGINE="$SCRIPT_DIR/confluence_publish.py"
+DEFAULT_DOTENV="$SKILL_ROOT/.env"
+SELF_CMD="bash $SCRIPT_DIR/run_publish.sh"
+SETUP_CMD="bash $SCRIPT_DIR/setup_env.sh"
 
 if [[ "${1:-}" == "--help" ]]; then
-  cat <<'EOF'
+  cat <<USAGE
 Usage:
-  run_publish.sh [args...]
+  $SELF_CMD [args...]
+
+This runner is self-contained:
+- engine: $ENGINE
+- dotenv: $DEFAULT_DOTENV (default)
 
 Examples:
-  run_publish.sh --dry-run --glob "docs/**/*.md"
-  run_publish.sh --glob "/mnt/c/Users/me/Documents/file.md" --parent-id 123456
+  $SELF_CMD --dry-run --glob "/mnt/c/Users/me/Documents/file.md"
+  $SELF_CMD --glob "docs/**/*.md"
+  $SELF_CMD --dotenv "/path/to/.env" --glob "docs/**/*.md"
 
-If project root is not discoverable automatically, set:
-  export CONFLUENCE_PUBLISHER_PROJECT_ROOT=/path/to/codex_mcp_atlassian
-EOF
+If default dotenv is missing:
+  $SETUP_CMD
+or export ATLASSIAN_* and CONFLUENCE_SPACE_KEY in shell.
+USAGE
   exit 0
 fi
 
-PROJECT_ROOT="$(find_project_root || true)"
-if [[ -z "$PROJECT_ROOT" ]]; then
-  echo "[ERROR] Could not find project root (scripts/confluence_publish.py)." >&2
-  echo "Set CONFLUENCE_PUBLISHER_PROJECT_ROOT and retry." >&2
+if [[ ! -f "$ENGINE" ]]; then
+  echo "[ERROR] Engine not found: $ENGINE" >&2
   exit 2
 fi
 
-cd "$PROJECT_ROOT"
-if [[ -x "scripts/publish.sh" ]]; then
-  exec bash scripts/publish.sh "$@"
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[ERROR] python3 is required" >&2
+  exit 2
 fi
 
-exec python3 scripts/confluence_publish.py "$@"
+HAS_DOTENV_ARG=0
+ARGS=("$@")
+for ((i = 0; i < ${#ARGS[@]}; i++)); do
+  if [[ "${ARGS[$i]}" == "--dotenv" ]]; then
+    HAS_DOTENV_ARG=1
+    break
+  fi
+done
+
+if [[ "$HAS_DOTENV_ARG" -eq 0 ]]; then
+  if [[ ! -f "$DEFAULT_DOTENV" ]]; then
+    if [[ -n "${ATLASSIAN_SITE:-}" && -n "${ATLASSIAN_EMAIL:-}" && -n "${ATLASSIAN_API_TOKEN:-}" && -n "${CONFLUENCE_SPACE_KEY:-}" ]]; then
+      exec python3 "$ENGINE" "$@"
+    fi
+    echo "[ERROR] Default dotenv not found: $DEFAULT_DOTENV" >&2
+    echo "Run: $SETUP_CMD" >&2
+    echo "or pass --dotenv /path/to/.env" >&2
+    echo "or export ATLASSIAN_* and CONFLUENCE_SPACE_KEY in your shell." >&2
+    exit 2
+  fi
+  set -- --dotenv "$DEFAULT_DOTENV" "$@"
+fi
+
+exec python3 "$ENGINE" "$@"
