@@ -11,6 +11,78 @@ Local Markdown files can be published to Confluence Cloud pages.
 bash scripts/setup_atlassian_wsl.sh
 ```
 
+## Agent layout
+
+- Shared publish runner:
+  - `scripts/publish.sh`
+- Codex skill assets:
+  - `skills/confluence-publisher/SKILL.md`
+- Claude project instructions:
+  - `CLAUDE.md`
+  - `agents/claude/confluence_publisher.md`
+
+## Repository structure (what each file does)
+
+- `scripts/confluence_publish.py`
+  - Core engine. Calls Confluence REST API to create/update pages and upload Mermaid images.
+- `scripts/publish.sh`
+  - Shared entrypoint for both Codex and Claude. Executes `confluence_publish.py`.
+- `scripts/setup_atlassian_wsl.sh`
+  - Interactive first-time setup (`.env`, API validation, MCP login).
+- `scripts/setup_atlassian_wsl.ps1`, `scripts/setup_atlassian_wsl.cmd`
+  - Windows wrappers that call the WSL setup script.
+
+- `skills/confluence-publisher/SKILL.md`
+  - Codex skill definition (when/how Codex should run publish workflow).
+- `skills/confluence-publisher/scripts/run_publish.sh`
+  - Codex skill runtime helper. Delegates to `scripts/publish.sh`.
+- `scripts/codex/install_skill.sh`
+  - Installs the Codex skill into `~/.codex/skills/confluence-publisher`.
+- `scripts/codex/install_skill.ps1`, `scripts/codex/install_skill.cmd`
+  - Windows wrappers for Codex skill installation.
+
+- `CLAUDE.md`
+  - Claude entry instruction file for this repository.
+- `agents/claude/confluence_publisher.md`
+  - Detailed Claude workflow instructions for Confluence publishing.
+
+- `docs/*.md`
+  - Source markdown documents to publish.
+
+## Codex skill install (optional)
+
+Install this repo as a reusable Codex skill:
+
+```bash
+bash scripts/codex/install_skill.sh
+```
+
+Windows entrypoints:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\codex\install_skill.ps1
+```
+
+```bat
+scripts\codex\install_skill.cmd
+```
+
+Installed path:
+- `~/.codex/skills/confluence-publisher`
+
+## Claude support (optional)
+
+This repo also includes Claude-oriented instructions:
+- [CLAUDE.md](CLAUDE.md)
+- [agents/claude/confluence_publisher.md](agents/claude/confluence_publisher.md)
+
+Claude/Codex shared helper command:
+
+```bash
+bash scripts/publish.sh --dry-run --glob "docs/**/*.md"
+bash scripts/publish.sh --glob "docs/**/*.md"
+```
+
 ## 1) Required setup
 
 - MCP login should already be done (`codex mcp login atlassian`)

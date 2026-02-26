@@ -59,7 +59,35 @@ scripts\setup_atlassian_wsl.cmd
 
 ---
 
-## 3) 완료 후 확인
+## 3) (선택) Codex Skill 설치
+
+이 저장소를 다른 Codex 세션에서도 재사용하려면 스킬로 설치하세요.
+
+WSL:
+
+```bash
+bash scripts/codex/install_skill.sh
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\codex\install_skill.ps1
+```
+
+Windows CMD:
+
+```bat
+scripts\codex\install_skill.cmd
+```
+
+설치 위치:
+- `~/.codex/skills/confluence-publisher`
+- Claude 지침 위치: `CLAUDE.md`, `agents/claude/confluence_publisher.md`
+
+---
+
+## 4) 완료 후 확인
 
 세팅이 끝나면 아래를 실행해 게시 전 점검합니다.
 
@@ -75,7 +103,7 @@ python3 scripts/confluence_publish.py
 
 ---
 
-## 4) 스크립트가 내부에서 하는 일
+## 5) 스크립트가 내부에서 하는 일
 
 1. `.env` 값 입력 받기/저장 (`chmod 600`)
 2. Confluence API로 Space 조회 테스트
@@ -86,7 +114,7 @@ python3 scripts/confluence_publish.py
 
 ---
 
-## 5) 자주 나는 문제
+## 6) 자주 나는 문제
 
 - `OAuth login is only supported for streamable HTTP servers`
   - 원인: `stdio` 방식으로 등록됨
