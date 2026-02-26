@@ -188,6 +188,89 @@ def simple_markdown_to_html(
     code_lines: list[str] = []
     mermaid_image_count = 0
 
+    def split_table_row(line: str) -> list[str]:
+        raw = line.strip()
+        if raw.startswith("|"):
+            raw = raw[1:]
+        if raw.endswith("|"):
+            raw = raw[:-1]
+        cells: list[str] = []
+        buf: list[str] = []
+        escaped = False
+        for ch in raw:
+            if escaped:
+                buf.append(ch)
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == "|":
+                cells.append("".join(buf).strip())
+                buf = []
+            else:
+                buf.append(ch)
+        cells.append("".join(buf).strip())
+        return cells
+
+    def is_table_separator_cell(cell: str) -> bool:
+        return bool(re.fullmatch(r":?-{3,}:?", cell.strip()))
+
+    def parse_table_alignment(cell: str) -> str | None:
+        c = cell.strip()
+        if c.startswith(":") and c.endswith(":"):
+            return "center"
+        if c.endswith(":"):
+            return "right"
+        if c.startswith(":"):
+            return "left"
+        return None
+
+    def looks_like_table_header(line: str, next_line: str) -> bool:
+        row = line.strip()
+        sep = next_line.strip()
+        if not (row.startswith("|") and sep.startswith("|")):
+            return False
+        header_cells = split_table_row(row)
+        sep_cells = split_table_row(sep)
+        if len(header_cells) < 2 or len(sep_cells) != len(header_cells):
+            return False
+        return all(is_table_separator_cell(c) for c in sep_cells)
+
+    def looks_like_table_row(line: str) -> bool:
+        row = line.strip()
+        return row.startswith("|") and "|" in row[1:]
+
+    def render_markdown_table(table_lines: list[str]) -> str:
+        header_cells = split_table_row(table_lines[0])
+        sep_cells = split_table_row(table_lines[1])
+        alignments = [parse_table_alignment(c) for c in sep_cells]
+
+        def render_cell(tag: str, content: str, align: str | None) -> str:
+            body = render_inline(content)
+            if align:
+                return f'<{tag} style="text-align:{align};">{body}</{tag}>'
+            return f"<{tag}>{body}</{tag}>"
+
+        out: list[str] = ["<table><thead><tr>"]
+        for idx, cell in enumerate(header_cells):
+            out.append(render_cell("th", cell, alignments[idx]))
+        out.append("</tr></thead><tbody>")
+
+        for row_line in table_lines[2:]:
+            row_cells = split_table_row(row_line)
+            if len(row_cells) < len(header_cells):
+                row_cells.extend([""] * (len(header_cells) - len(row_cells)))
+            if len(row_cells) > len(header_cells):
+                row_cells = row_cells[: len(header_cells)]
+            out.append("<tr>")
+            for idx, cell in enumerate(row_cells):
+                out.append(render_cell("td", cell, alignments[idx]))
+            out.append("</tr>")
+
+        out.append("</tbody></table>")
+        return "".join(out)
+
     def render_plain_inline(text: str) -> str:
         escaped = html.escape(text)
         escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
@@ -251,7 +334,9 @@ def simple_markdown_to_html(
             parts.append("</ul>")
             in_ul = False
 
-    for raw_line in lines:
+    i = 0
+    while i < len(lines):
+        raw_line = lines[i]
         line = raw_line.rstrip()
         stripped = line.strip()
 
@@ -267,14 +352,27 @@ def simple_markdown_to_html(
                 in_code_block = False
                 code_lang = ""
                 code_lines = []
+            i += 1
             continue
 
         if in_code_block:
             code_lines.append(raw_line)
+            i += 1
             continue
 
         if not stripped:
             close_list()
+            i += 1
+            continue
+
+        if i + 1 < len(lines) and looks_like_table_header(lines[i], lines[i + 1]):
+            close_list()
+            table_block = [lines[i], lines[i + 1]]
+            i += 2
+            while i < len(lines) and looks_like_table_row(lines[i]):
+                table_block.append(lines[i])
+                i += 1
+            parts.append(render_markdown_table(table_block))
             continue
 
         heading = re.match(r"^(#{1,6})\s+(.*)$", stripped)
@@ -283,6 +381,7 @@ def simple_markdown_to_html(
             level = len(heading.group(1))
             content = render_inline(heading.group(2).strip())
             parts.append(f"<h{level}>{content}</h{level}>")
+            i += 1
             continue
 
         bullet = re.match(r"^[-*]\s+(.*)$", stripped)
@@ -291,10 +390,12 @@ def simple_markdown_to_html(
                 parts.append("<ul>")
                 in_ul = True
             parts.append(f"<li>{render_inline(bullet.group(1).strip())}</li>")
+            i += 1
             continue
 
         close_list()
         parts.append(f"<p>{render_inline(stripped)}</p>")
+        i += 1
 
     close_list()
     if in_code_block:
