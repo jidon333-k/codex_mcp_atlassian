@@ -26,6 +26,8 @@ MARKDOWN_GLOB=docs/**/*.md
 PUBLISH_CREATE_IF_MISSING=true
 PUBLISH_UPDATE_IF_TITLE_MATCH=true
 PUBLISH_DEFAULT_LABELS=auto,docs
+CONFLUENCE_MERMAID_MODE=attachment
+CONFLUENCE_MERMAID_IMAGE_WIDTH=1000
 ```
 
 ## 2) Dry-run first
@@ -47,7 +49,24 @@ python3 scripts/confluence_publish.py --glob "notes/**/*.md"
 python3 scripts/confluence_publish.py --space-key DEV
 python3 scripts/confluence_publish.py --parent-id 123456
 python3 scripts/confluence_publish.py --default-labels "team,release"
+python3 scripts/confluence_publish.py --mermaid-mode code
 ```
+
+`--mermaid-mode` options:
+- `attachment` (default): render mermaid to local/remote SVG and upload as image attachment
+- `code`: keep mermaid as code block
+- `macro`: use Confluence mermaid macro
+
+`--mermaid-image-width`:
+- default: `1000`
+- env: `CONFLUENCE_MERMAID_IMAGE_WIDTH`
+
+## Mermaid image generation
+
+- The publisher finds each fenced block that starts with ` ```mermaid `.
+- In `attachment` mode, it renders SVG via local `mmdc` first (if installed).
+- If `mmdc` is not found or fails, it falls back to `https://mermaid.ink/svg/...`.
+- The SVG is uploaded as a Confluence attachment and embedded with `<ac:image ac:width="...">`.
 
 ## 5) Optional front matter per file
 

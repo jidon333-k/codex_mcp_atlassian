@@ -109,6 +109,8 @@ MARKDOWN_GLOB=$markdown_glob
 PUBLISH_CREATE_IF_MISSING=$create_if_missing
 PUBLISH_UPDATE_IF_TITLE_MATCH=$update_if_title_match
 PUBLISH_DEFAULT_LABELS=$default_labels
+CONFLUENCE_MERMAID_MODE=attachment
+CONFLUENCE_MERMAID_IMAGE_WIDTH=1000
 EOF
 chmod 600 "$ENV_FILE"
 info ".env 파일을 저장했습니다: $ENV_FILE"

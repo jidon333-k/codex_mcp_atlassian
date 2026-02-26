@@ -15,7 +15,22 @@ labels: codex,mcp,atlassian,confluence,jira,setup
 - Codex CLI
 - WSL(권장) 또는 Windows PowerShell
 
-## 2) 저장소 받기 (GitHub)
+## 2) 순수 MCP 설정 (GitHub/스크립트 없이 가능)
+
+아래 명령만으로 Atlassian MCP 연결이 가능합니다.
+
+```bash
+codex mcp add atlassian --url https://mcp.atlassian.com/v1/sse
+codex mcp login atlassian
+codex mcp list
+codex mcp get atlassian --json
+```
+
+참고:
+- 브라우저 자동 실행이 안 되면, 터미널에 출력된 `authorize` URL을 직접 열어 승인
+- 이 방식은 **MCP 연결만** 다룹니다. Markdown 자동 게시는 별도 스크립트 필요
+
+## 3) 저장소 받기 (GitHub)
 
 아래 저장소를 클론합니다.
 
@@ -24,7 +39,7 @@ git clone https://github.com/jidon333-k/codex_mcp_atlassian.git
 cd codex_mcp_atlassian
 ```
 
-## 3) 원클릭 초기 세팅 실행
+## 4) 원클릭 초기 세팅 실행
 
 ### WSL
 
@@ -51,7 +66,7 @@ scripts\setup_atlassian_wsl.cmd
 - Parent ID: 비워도 가능(필요 시 폴더/페이지 ID 입력)
 - API Token
 
-## 4) MCP 연결 확인
+## 5) MCP 연결 확인
 
 ```bash
 codex mcp list
@@ -62,7 +77,7 @@ codex mcp get atlassian --json
 - `atlassian` 서버가 보임
 - Auth 상태가 로그인 상태(OAuth)
 
-## 5) 마크다운 -> Confluence 게시
+## 6) 마크다운 -> Confluence 게시
 
 드라이런(미리보기):
 
@@ -82,7 +97,7 @@ python3 scripts/confluence_publish.py
 python3 scripts/confluence_publish.py --glob "docs/your_file.md"
 ```
 
-## 6) 설정 파일(.env) 설명
+## 7) 설정 파일(.env) 설명
 
 `.env`는 개인별로 다릅니다. 팀 문서에는 실제 값을 공유하지 않습니다.
 
@@ -96,15 +111,31 @@ MARKDOWN_GLOB=docs/**/*.md
 PUBLISH_CREATE_IF_MISSING=true
 PUBLISH_UPDATE_IF_TITLE_MATCH=true
 PUBLISH_DEFAULT_LABELS=auto,docs
+CONFLUENCE_MERMAID_MODE=attachment
+CONFLUENCE_MERMAID_IMAGE_WIDTH=1000
 ```
 
-## 7) 경로/환경 주의사항
+Mermaid 처리 모드:
+- `attachment` (기본값): Mermaid를 이미지 첨부로 게시
+- `code`: Mermaid 코드를 코드블럭으로 게시
+- `macro`: Confluence mermaid 매크로 사용
+
+이미지 크기:
+- `CONFLUENCE_MERMAID_IMAGE_WIDTH`: Confluence에 표시되는 기본 너비(px), 기본값 `1000`
+
+Mermaid 이미지 생성 방식:
+- `attachment` 모드에서 시작 토큰이 ` ```mermaid ` 인 코드블럭을 찾습니다.
+- 로컬에 `mmdc`가 있으면 로컬 렌더링으로 SVG를 만듭니다.
+- `mmdc`가 없거나 실패하면 `mermaid.ink` 원격 렌더링으로 SVG를 만듭니다.
+- 생성된 SVG를 페이지 첨부파일로 업로드하고, 본문에는 `<ac:image>` 매크로로 삽입합니다.
+
+## 8) 경로/환경 주의사항
 
 - 로컬 경로는 사용자마다 다릅니다.
 - 문서의 `<PROJECT_ROOT>` 표시는 각자 PC 경로로 바꿔서 사용합니다.
 - `.env` 및 API 토큰은 Git에 커밋하지 않습니다.
 
-## 8) 트러블슈팅
+## 9) 트러블슈팅
 
 - `OAuth login is only supported for streamable HTTP servers`
   - `codex mcp add atlassian --url https://mcp.atlassian.com/v1/sse` 방식으로 재설정
@@ -116,7 +147,7 @@ PUBLISH_DEFAULT_LABELS=auto,docs
 - `Permission denied (publickey)`로 git clone 실패
   - HTTPS 클론 사용 또는 GitHub SSH 키 등록 필요
 
-## 9) 참고
+## 10) 참고
 
 - 저장소: https://github.com/jidon333-k/codex_mcp_atlassian
 - 상세 설정 문서: `SETUP_QUICKSTART_KO.md`

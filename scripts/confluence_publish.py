@@ -13,6 +13,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,24 @@ class PublishResult:
     title: str
     path: Path
     message: str = ""
+
+
+@dataclass
+class MermaidImagePlan:
+    filename: str
+    mermaid_source: str
+
+
+def render_mermaid_svg(mermaid_source: str) -> str | None:
+    encoded = base64.urlsafe_b64encode(mermaid_source.encode("utf-8")).decode("ascii").rstrip("=")
+    url = f"https://mermaid.ink/svg/{encoded}"
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/svg+xml"})
+    try:
+        with urlopen(req, timeout=30) as resp:
+            svg = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    return svg if "<svg" in svg else None
 
 
 def load_dotenv(dotenv_path: Path) -> None:
@@ -123,13 +143,50 @@ def derive_title(path: Path, body: str, metadata: dict[str, str]) -> str:
     return re.sub(r"[-_]+", " ", path.stem).strip().title()
 
 
-def simple_markdown_to_html(markdown_text: str) -> str:
+def build_mermaid_image_name(prefix: str, index: int) -> str:
+    base = re.sub(r"[^\w .()-]+", "", prefix, flags=re.UNICODE).strip()
+    if not base:
+        base = "Codex Mermaid"
+    return f"{base} Mermaid {index:02d}.svg"[:180]
+
+
+def render_mermaid_svg_local(mermaid_source: str) -> bytes | None:
+    mmdc = shutil.which("mmdc")
+    if not mmdc:
+        return None
+    try:
+        with tempfile.TemporaryDirectory(prefix="codex-mermaid-") as td:
+            in_path = Path(td) / "diagram.mmd"
+            out_path = Path(td) / "diagram.svg"
+            in_path.write_text(mermaid_source, encoding="utf-8")
+            proc = subprocess.run(
+                [mmdc, "-i", str(in_path), "-o", str(out_path)],
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            if proc.returncode != 0 or not out_path.exists():
+                return None
+            return out_path.read_bytes()
+    except Exception:
+        return None
+
+
+def simple_markdown_to_html(
+    markdown_text: str,
+    *,
+    mermaid_mode: str = "code",
+    mermaid_image_prefix: str | None = None,
+    mermaid_image_width: int = 1000,
+    mermaid_image_plans: list[MermaidImagePlan] | None = None,
+) -> str:
     lines = markdown_text.splitlines()
     parts: list[str] = []
     in_ul = False
     in_code_block = False
     code_lang = ""
     code_lines: list[str] = []
+    mermaid_image_count = 0
 
     def render_plain_inline(text: str) -> str:
         escaped = html.escape(text)
@@ -158,6 +215,36 @@ def simple_markdown_to_html(markdown_text: str) -> str:
             "</ac:structured-macro>"
         )
 
+    def emit_mermaid_macro(code_text: str) -> str:
+        safe_code = code_text.replace("]]>", "]]]]><![CDATA[>")
+        return (
+            '<ac:structured-macro ac:name="mermaid">'
+            f"<ac:plain-text-body><![CDATA[{safe_code}]]></ac:plain-text-body>"
+            "</ac:structured-macro>"
+        )
+
+    def emit_mermaid_image_macro(filename: str, width: int) -> str:
+        safe_filename = html.escape(filename)
+        safe_width = max(240, width)
+        return (
+            f'<ac:image ac:align="center" ac:width="{safe_width}">'
+            f'<ri:attachment ri:filename="{safe_filename}" />'
+            "</ac:image>"
+        )
+
+    def emit_fenced_block(lang: str, code_text: str) -> str:
+        nonlocal mermaid_image_count
+        lang_norm = lang.strip().lower()
+        if mermaid_mode == "macro" and lang_norm in {"mermaid", "mmd"}:
+            return emit_mermaid_macro(code_text)
+        if mermaid_mode == "attachment" and lang_norm in {"mermaid", "mmd"}:
+            mermaid_image_count += 1
+            filename = build_mermaid_image_name(mermaid_image_prefix or "Codex Diagram", mermaid_image_count)
+            if mermaid_image_plans is not None:
+                mermaid_image_plans.append(MermaidImagePlan(filename=filename, mermaid_source=code_text))
+            return emit_mermaid_image_macro(filename, mermaid_image_width)
+        return emit_code_macro(lang, code_text)
+
     def close_list() -> None:
         nonlocal in_ul
         if in_ul:
@@ -176,7 +263,7 @@ def simple_markdown_to_html(markdown_text: str) -> str:
                 code_lang = fence.group(1).strip()
                 code_lines = []
             else:
-                parts.append(emit_code_macro(code_lang, "\n".join(code_lines)))
+                parts.append(emit_fenced_block(code_lang, "\n".join(code_lines)))
                 in_code_block = False
                 code_lang = ""
                 code_lines = []
@@ -211,11 +298,29 @@ def simple_markdown_to_html(markdown_text: str) -> str:
 
     close_list()
     if in_code_block:
-        parts.append(emit_code_macro(code_lang, "\n".join(code_lines)))
+        parts.append(emit_fenced_block(code_lang, "\n".join(code_lines)))
     return "\n".join(parts) if parts else "<p></p>"
 
 
-def markdown_to_html(markdown_text: str) -> str:
+def markdown_to_html(
+    markdown_text: str,
+    *,
+    mermaid_mode: str = "code",
+    mermaid_image_prefix: str | None = None,
+    mermaid_image_width: int = 1000,
+    mermaid_image_plans: list[MermaidImagePlan] | None = None,
+) -> str:
+    mermaid_mode = mermaid_mode.lower().strip() or "code"
+    if mermaid_mode in {"macro", "attachment"}:
+        # Use the internal converter to map ```mermaid fences into macro storage markup.
+        return simple_markdown_to_html(
+            markdown_text,
+            mermaid_mode=mermaid_mode,
+            mermaid_image_prefix=mermaid_image_prefix,
+            mermaid_image_width=mermaid_image_width,
+            mermaid_image_plans=mermaid_image_plans,
+        )
+
     pandoc = shutil.which("pandoc")
     if pandoc:
         proc = subprocess.run(
@@ -240,7 +345,13 @@ def markdown_to_html(markdown_text: str) -> str:
     except Exception:
         pass
 
-    return simple_markdown_to_html(markdown_text)
+    return simple_markdown_to_html(
+        markdown_text,
+        mermaid_mode=mermaid_mode,
+        mermaid_image_prefix=mermaid_image_prefix,
+        mermaid_image_width=mermaid_image_width,
+        mermaid_image_plans=mermaid_image_plans,
+    )
 
 
 def merge_labels(base: list[str], extra: list[str]) -> list[str]:
@@ -380,6 +491,112 @@ class ConfluenceClient:
         payload = [{"prefix": "global", "name": label} for label in labels]
         self._request("POST", f"/wiki/rest/api/content/{page_id}/label", body=payload)
 
+    def upload_attachment_bytes(
+        self,
+        *,
+        page_id: str,
+        filename: str,
+        data: bytes,
+        content_type: str,
+    ) -> dict[str, Any]:
+        existing = self.find_attachment_by_filename(page_id=page_id, filename=filename)
+        safe_filename = filename.replace('"', "_")
+        boundary = f"----CodexBoundary{uuid.uuid4().hex}"
+        body = b"".join(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                (
+                    f'Content-Disposition: form-data; name="file"; filename="{safe_filename}"\r\n'
+                ).encode("utf-8"),
+                f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+                data,
+                b"\r\n",
+                f"--{boundary}--\r\n".encode("utf-8"),
+            ]
+        )
+
+        if existing:
+            attachment_id = str(existing["id"])
+            url = (
+                f"https://{self.site}/wiki/rest/api/content/{page_id}/child/attachment/"
+                f"{attachment_id}/data"
+            )
+        else:
+            url = f"https://{self.site}/wiki/rest/api/content/{page_id}/child/attachment"
+        headers = {
+            "Authorization": self.auth_header,
+            "Accept": "application/json",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "X-Atlassian-Token": "nocheck",
+        }
+        req = Request(url, data=body, method="POST", headers=headers)
+        try:
+            with urlopen(req, timeout=60) as resp:
+                payload = resp.read().decode("utf-8")
+        except HTTPError as exc:
+            err_payload = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"POST attachment upload failed "
+                f"({exc.code}): {err_payload[:800]}"
+            ) from exc
+
+        obj = json.loads(payload)
+        if isinstance(obj, dict) and obj.get("id"):
+            return obj
+        results = obj.get("results", [])
+        if not results:
+            raise RuntimeError("Attachment upload succeeded but no attachment result was returned.")
+        return results[0]
+
+    def find_attachment_by_filename(self, *, page_id: str, filename: str) -> dict[str, Any] | None:
+        resp = self._request(
+            "GET",
+            f"/wiki/rest/api/content/{page_id}/child/attachment",
+            query={"filename": filename, "limit": 5},
+        )
+        results = resp.get("results", [])
+        for row in results:
+            if row.get("title") == filename:
+                return row
+        return results[0] if results else None
+
+
+def render_mermaid_svg_bytes(mermaid_source: str) -> bytes | None:
+    local = render_mermaid_svg_local(mermaid_source)
+    if local:
+        return local
+    remote = render_mermaid_svg(mermaid_source)
+    if remote:
+        return remote.encode("utf-8")
+    return None
+
+
+def upload_mermaid_image_attachments(
+    client: ConfluenceClient,
+    *,
+    page_id: str,
+    plans: list[MermaidImagePlan],
+) -> None:
+    for plan in plans:
+        svg_bytes = render_mermaid_svg_bytes(plan.mermaid_source)
+        if not svg_bytes:
+            svg_bytes = (
+                "<svg xmlns='http://www.w3.org/2000/svg' width='960' height='180'>"
+                "<rect width='100%' height='100%' fill='#f5f5f5' stroke='#999'/>"
+                "<text x='20' y='40' font-family='monospace' font-size='18'>"
+                "Mermaid render failed. Showing source below."
+                "</text>"
+                "<text x='20' y='80' font-family='monospace' font-size='14'>"
+                + html.escape(plan.mermaid_source[:300])
+                + "</text></svg>"
+            ).encode("utf-8")
+        client.upload_attachment_bytes(
+            page_id=page_id,
+            filename=plan.filename,
+            data=svg_bytes,
+            content_type="image/svg+xml",
+        )
+
 
 def parse_document(path: Path) -> Document:
     text = path.read_text(encoding="utf-8")
@@ -410,10 +627,24 @@ def publish_document(
     create_if_missing: bool,
     update_if_title_match: bool,
     dry_run: bool,
+    mermaid_mode: str,
+    mermaid_image_width: int,
 ) -> PublishResult:
-    body_html = markdown_to_html(doc.body_markdown)
+    mermaid_image_plans: list[MermaidImagePlan] = []
+    body_html = markdown_to_html(
+        doc.body_markdown,
+        mermaid_mode=mermaid_mode,
+        mermaid_image_prefix=doc.title,
+        mermaid_image_width=mermaid_image_width,
+        mermaid_image_plans=mermaid_image_plans,
+    )
     target_parent = doc.parent_id or default_parent_id
     labels = merge_labels(default_labels, doc.labels)
+    mermaid_image_msg = (
+        f"; mermaid images={len(mermaid_image_plans)}"
+        if mermaid_mode == "attachment" and mermaid_image_plans
+        else ""
+    )
 
     existing: dict[str, Any] | None = None
     if doc.page_id:
@@ -436,8 +667,11 @@ def publish_document(
                 page_id,
                 doc.title,
                 doc.path,
-                f"would update version {current_version} -> {next_version}",
+                f"would update version {current_version} -> {next_version}{mermaid_image_msg}",
             )
+
+        if mermaid_mode == "attachment" and mermaid_image_plans:
+            upload_mermaid_image_attachments(client, page_id=page_id, plans=mermaid_image_plans)
 
         updated = client.update_page(
             page_id=page_id,
@@ -454,7 +688,13 @@ def publish_document(
         return PublishResult("skipped", None, doc.title, doc.path, "not found and create disabled")
 
     if dry_run:
-        return PublishResult("dry-create", None, doc.title, doc.path, "would create new page")
+        return PublishResult(
+            "dry-create",
+            None,
+            doc.title,
+            doc.path,
+            f"would create new page{mermaid_image_msg}",
+        )
 
     created = client.create_page(
         space_id=space_id,
@@ -463,6 +703,8 @@ def publish_document(
         parent_id=target_parent,
     )
     page_id = str(created["id"])
+    if mermaid_mode == "attachment" and mermaid_image_plans:
+        upload_mermaid_image_attachments(client, page_id=page_id, plans=mermaid_image_plans)
     if labels:
         client.add_labels(page_id, labels)
     return PublishResult("created", page_id, doc.title, doc.path)
@@ -477,6 +719,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--default-labels", default=None, help="Comma-separated labels")
     parser.add_argument("--dry-run", action="store_true", help="Show planned actions only")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+    parser.add_argument(
+        "--mermaid-mode",
+        choices=["code", "macro", "attachment"],
+        default=None,
+        help="Render mermaid fenced blocks as code, Confluence macro, or image attachment",
+    )
+    parser.add_argument(
+        "--mermaid-image-width",
+        type=int,
+        default=None,
+        help="Image width(px) when --mermaid-mode attachment (default: env CONFLUENCE_MERMAID_IMAGE_WIDTH or 1000)",
+    )
     parser.add_argument(
         "--create-if-missing",
         choices=["true", "false"],
@@ -498,6 +752,16 @@ def bool_arg(value: str | None, fallback_env: str, default: bool) -> bool:
     return env_bool(fallback_env, default)
 
 
+def parse_positive_int(raw: str, *, setting_name: str, min_value: int, max_value: int) -> int:
+    try:
+        parsed = int(raw)
+    except ValueError:
+        raise ValueError(f"{setting_name} must be an integer") from None
+    if parsed < min_value or parsed > max_value:
+        raise ValueError(f"{setting_name} must be between {min_value} and {max_value}")
+    return parsed
+
+
 def main() -> int:
     args = parse_args()
     load_dotenv(Path(args.dotenv))
@@ -510,6 +774,25 @@ def main() -> int:
     parent_id = (args.parent_id or os.getenv("CONFLUENCE_PARENT_ID", "")).strip() or None
     glob_pattern = (args.glob_pattern or os.getenv("MARKDOWN_GLOB", "docs/**/*.md")).strip()
     default_labels = parse_labels(args.default_labels or os.getenv("PUBLISH_DEFAULT_LABELS", ""))
+    mermaid_mode = (args.mermaid_mode or os.getenv("CONFLUENCE_MERMAID_MODE", "attachment")).strip().lower()
+    if mermaid_mode not in {"code", "macro", "attachment"}:
+        print("CONFLUENCE_MERMAID_MODE must be 'code', 'macro', or 'attachment'", file=sys.stderr)
+        return 2
+    mermaid_image_width_raw = (
+        str(args.mermaid_image_width)
+        if args.mermaid_image_width is not None
+        else os.getenv("CONFLUENCE_MERMAID_IMAGE_WIDTH", "1000").strip()
+    )
+    try:
+        mermaid_image_width = parse_positive_int(
+            mermaid_image_width_raw,
+            setting_name="CONFLUENCE_MERMAID_IMAGE_WIDTH",
+            min_value=240,
+            max_value=4000,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     create_if_missing = bool_arg(args.create_if_missing, "PUBLISH_CREATE_IF_MISSING", True)
     update_if_title_match = bool_arg(args.update_if_title_match, "PUBLISH_UPDATE_IF_TITLE_MATCH", True)
@@ -555,6 +838,8 @@ def main() -> int:
                 create_if_missing=create_if_missing,
                 update_if_title_match=update_if_title_match,
                 dry_run=args.dry_run,
+                mermaid_mode=mermaid_mode,
+                mermaid_image_width=mermaid_image_width,
             )
             suffix = f" ({result.message})" if result.message else ""
             page_part = f" page_id={result.page_id}" if result.page_id else ""
