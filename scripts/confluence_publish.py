@@ -127,6 +127,36 @@ def simple_markdown_to_html(markdown_text: str) -> str:
     lines = markdown_text.splitlines()
     parts: list[str] = []
     in_ul = False
+    in_code_block = False
+    code_lang = ""
+    code_lines: list[str] = []
+
+    def render_plain_inline(text: str) -> str:
+        escaped = html.escape(text)
+        escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+        escaped = re.sub(r"\*(.+?)\*", r"<em>\1</em>", escaped)
+        return escaped
+
+    def render_inline(text: str) -> str:
+        out: list[str] = []
+        last = 0
+        for match in re.finditer(r"`([^`]+)`", text):
+            out.append(render_plain_inline(text[last : match.start()]))
+            out.append(f"<code>{html.escape(match.group(1))}</code>")
+            last = match.end()
+        out.append(render_plain_inline(text[last:]))
+        return "".join(out)
+
+    def emit_code_macro(lang: str, code_text: str) -> str:
+        # Keep XML CDATA valid even if source contains ']]>'.
+        safe_code = code_text.replace("]]>", "]]]]><![CDATA[>")
+        safe_lang = html.escape(lang or "none")
+        return (
+            '<ac:structured-macro ac:name="code">'
+            f'<ac:parameter ac:name="language">{safe_lang}</ac:parameter>'
+            f"<ac:plain-text-body><![CDATA[{safe_code}]]></ac:plain-text-body>"
+            "</ac:structured-macro>"
+        )
 
     def close_list() -> None:
         nonlocal in_ul
@@ -138,6 +168,24 @@ def simple_markdown_to_html(markdown_text: str) -> str:
         line = raw_line.rstrip()
         stripped = line.strip()
 
+        fence = re.match(r"^```(.*)$", stripped)
+        if fence:
+            close_list()
+            if not in_code_block:
+                in_code_block = True
+                code_lang = fence.group(1).strip()
+                code_lines = []
+            else:
+                parts.append(emit_code_macro(code_lang, "\n".join(code_lines)))
+                in_code_block = False
+                code_lang = ""
+                code_lines = []
+            continue
+
+        if in_code_block:
+            code_lines.append(raw_line)
+            continue
+
         if not stripped:
             close_list()
             continue
@@ -146,7 +194,7 @@ def simple_markdown_to_html(markdown_text: str) -> str:
         if heading:
             close_list()
             level = len(heading.group(1))
-            content = html.escape(heading.group(2).strip())
+            content = render_inline(heading.group(2).strip())
             parts.append(f"<h{level}>{content}</h{level}>")
             continue
 
@@ -155,13 +203,15 @@ def simple_markdown_to_html(markdown_text: str) -> str:
             if not in_ul:
                 parts.append("<ul>")
                 in_ul = True
-            parts.append(f"<li>{html.escape(bullet.group(1).strip())}</li>")
+            parts.append(f"<li>{render_inline(bullet.group(1).strip())}</li>")
             continue
 
         close_list()
-        parts.append(f"<p>{html.escape(stripped)}</p>")
+        parts.append(f"<p>{render_inline(stripped)}</p>")
 
     close_list()
+    if in_code_block:
+        parts.append(emit_code_macro(code_lang, "\n".join(code_lines)))
     return "\n".join(parts) if parts else "<p></p>"
 
 
