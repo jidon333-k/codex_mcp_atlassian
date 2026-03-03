@@ -139,17 +139,17 @@ python3 scripts/confluence_publish.py
 1. `.env` 값 입력 받기/저장 (`chmod 600`)
 2. Confluence API로 Space 조회 테스트
 3. Jira API로 `myself` 조회 테스트
-4. MCP 서버를 `--url https://mcp.atlassian.com/v1/sse`로 맞춤
-5. `codex mcp login atlassian` OAuth 실행
+4. MCP 서버를 `npx -y mcp-remote https://mcp.atlassian.com/v1/mcp`(stdio)로 맞춤
+5. 첫 MCP 호출 시 OAuth 승인 진행
 6. 성공 시 다음 실행 명령 안내
 
 ---
 
 ## 6) 자주 나는 문제
 
-- `OAuth login is only supported for streamable HTTP servers`
-  - 원인: `stdio` 방식으로 등록됨
-  - 해결: 세팅 스크립트 재실행 (자동 교체)
+- `Unexpected content type: text/plain; charset=utf-8` (MCP 핸드셰이크 실패)
+  - 원인: 구형 `/v1/sse` 설정 또는 direct streamable_http + OAuth 조합 이슈
+  - 해결: 세팅 스크립트 재실행 후 `codex mcp list`에서 `Command: npx` / `mcp-remote .../v1/mcp` 확인
 
 - `curl: (22) ... 401`
   - 원인: API 토큰/이메일 불일치, 토큰 만료

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 MCP_NAME="atlassian"
-MCP_URL="https://mcp.atlassian.com/v1/sse"
+MCP_URL="https://mcp.atlassian.com/v1/mcp"
 
 info() { printf '[INFO] %s\n' "$*"; }
 warn() { printf '[WARN] %s\n' "$*"; }
@@ -61,6 +61,7 @@ need_cmd codex
 need_cmd python3
 need_cmd curl
 need_cmd base64
+need_cmd npx
 
 existing_site="$(read_env_default ATLASSIAN_SITE || true)"
 existing_email="$(read_env_default ATLASSIAN_EMAIL || true)"
@@ -166,26 +167,20 @@ info "Jira OK: user=$jira_name"
 info "MCP 서버 설정을 확인합니다."
 if codex mcp get "$MCP_NAME" --json >/dev/null 2>&1; then
   current_type="$(codex mcp get "$MCP_NAME" --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("transport",{}).get("type",""))')"
-  current_url="$(codex mcp get "$MCP_NAME" --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("transport",{}).get("url",""))')"
-  if [[ "$current_type" != "streamable_http" || "$current_url" != "$MCP_URL" ]]; then
+  current_cmd="$(codex mcp get "$MCP_NAME" --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("transport",{}).get("command",""))')"
+  current_args="$(codex mcp get "$MCP_NAME" --json | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin).get("transport",{}).get("args",[])))')"
+  expected_args="-y mcp-remote $MCP_URL"
+  if [[ "$current_type" != "stdio" || "$current_cmd" != "npx" || "$current_args" != "$expected_args" ]]; then
     warn "기존 MCP 설정을 교체합니다: $MCP_NAME"
     codex mcp remove "$MCP_NAME" >/dev/null
-    codex mcp add "$MCP_NAME" --url "$MCP_URL"
+    codex mcp add "$MCP_NAME" -- npx -y mcp-remote "$MCP_URL"
   fi
 else
-  codex mcp add "$MCP_NAME" --url "$MCP_URL"
+  codex mcp add "$MCP_NAME" -- npx -y mcp-remote "$MCP_URL"
 fi
 
-auth_row="$(codex mcp list | awk 'NR>1 && $1=="'"$MCP_NAME"'" {print}')"
-if grep -qi "Not logged in" <<<"$auth_row"; then
-  info "MCP OAuth 로그인을 진행합니다."
-  codex mcp login "$MCP_NAME"
-else
-  info "MCP가 이미 인증되어 있어 로그인 단계를 건너뜁니다."
-fi
-
-auth_status="$(codex mcp list | awk 'NR>1 && $1=="'"$MCP_NAME"'" {print $NF}')"
-info "MCP 상태: ${auth_status:-unknown}"
+info "MCP는 mcp-remote(stdio) 방식으로 설정되었습니다."
+info "첫 MCP 호출 시 브라우저 OAuth 승인이 필요할 수 있습니다."
 
 printf '\n완료되었습니다.\n'
 printf '다음 명령으로 게시 테스트를 진행하세요:\n'
