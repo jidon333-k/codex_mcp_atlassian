@@ -9,6 +9,25 @@
 
 ---
 
+## AI에게 이렇게 요청하세요 (복붙용)
+
+아래 문장을 그대로 쓰면, AI가 순서를 덜 놓칩니다.
+
+```text
+이 저장소에서 Atlassian 연동을 먼저 설정해줘.
+순서는 반드시:
+1) API 토큰 발급 안내 + 필수값(도메인/이메일/Space Key/Parent ID) 입력 받기
+2) scripts/setup_atlassian_wsl.sh 실행해서 로컬 .env 생성
+3) Confluence/Jira 검증 + codex mcp login 확인
+4) 그 다음 confluence-publisher 스킬 설치
+5) dry-run까지 실행
+```
+
+핵심:
+- 스킬 설치보다 `.env` 생성/검증이 먼저입니다.
+
+---
+
 ## 1) WSL에서 바로 실행 (가장 쉬움)
 
 프로젝트 루트(이 파일이 있는 저장소)에서 아래를 실행하세요.
