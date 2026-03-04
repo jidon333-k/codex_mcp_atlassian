@@ -180,7 +180,13 @@ else
 fi
 
 info "MCP는 mcp-remote(stdio) 방식으로 설정되었습니다."
-info "첫 MCP 호출 시 브라우저 OAuth 승인이 필요할 수 있습니다."
+info "OAuth 로그인을 진행합니다. 브라우저 승인 창이 열리면 승인하세요."
+if codex mcp login "$MCP_NAME"; then
+  info "MCP OAuth 로그인 완료: $MCP_NAME"
+else
+  warn "MCP OAuth 로그인 자동 진행에 실패했습니다."
+  warn "아래 명령을 직접 실행하세요: codex mcp login $MCP_NAME"
+fi
 
 printf '\n완료되었습니다.\n'
 printf '다음 명령으로 게시 테스트를 진행하세요:\n'

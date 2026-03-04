@@ -10,8 +10,9 @@ labels: codex,mcp,atlassian,confluence,jira,setup
 
 ## TL;DR
 
-- Codex AI에게 저장소 링크(`https://github.com/jidon333-k/codex_mcp_atlassian`)를 알려주고, `confluence-publisher` 스킬 설치를 요청하면 됩니다.
-- 그다음 "이 문서 Confluence에 업데이트해줘"라고 요청하면 게시/업데이트까지 처리할 수 있습니다.
+- 먼저 `bash scripts/setup_atlassian_wsl.sh` 를 실행해, API 토큰 입력부터 `.env` 생성/검증/MCP 로그인까지 한 번에 끝냅니다.
+- 그다음 Codex AI에게 저장소 링크(`https://github.com/jidon333-k/codex_mcp_atlassian`)를 주고 `confluence-publisher` 스킬 설치 + dry-run 실행을 요청하면 됩니다.
+- 이후 "이 문서 Confluence에 업데이트해줘"라고 요청하면 게시/업데이트까지 처리할 수 있습니다.
 
 ## 1) 준비물
 
@@ -51,6 +52,13 @@ cd codex_mcp_atlassian
 ```bash
 bash scripts/setup_atlassian_wsl.sh
 ```
+
+스크립트가 자동으로 수행하는 일:
+- API 토큰 발급 페이지 열기(선택)
+- 필수값 입력 받기(도메인/이메일/Space Key/Parent ID/API 토큰)
+- 로컬 `.env` 생성
+- Confluence/Jira API 검증
+- `codex mcp` atlassian 설정 및 `codex mcp login atlassian` 실행
 
 ### Windows PowerShell
 
